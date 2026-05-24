@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Clothes Shop</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f4f4f4; }
+        header { text-align: center; padding: 20px; background: #222; color: #fff; margin-bottom: 20px; border-radius: 8px; }
+        .container { display: flex; flex-wrap: wrap; gap: 20px; }
+        .products { flex: 3; display: flex; gap: 15px; flex-wrap: wrap; justify-content: center; }
+        .product-card { background: #fff; padding: 15px; border-radius: 8px; text-align: center; width: 220px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .product-card img { width: 100%; height: 200px; object-fit: cover; border-radius: 4px; background: #eee; margin-bottom: 10px; }
+        .cart { flex: 1; min-width: 250px; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); height: fit-content; }
+        button { background: #28a745; color: white; border: none; padding: 10px 15px; cursor: pointer; border-radius: 5px; width: 100%; margin-top: 10px; font-weight: bold; }
+        button:hover { background: #218838; }
+        
+        /* Checkout Modal Styles */
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); }
+        .modal-content { background: #fff; margin: 10% auto; padding: 20px; width: 90%; max-width: 350px; border-radius: 8px; box-sizing: border-box; }
+        input { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        
+        #loading { text-align: center; width: 100%; font-size: 1.2em; color: #666; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>Exclusive Collection</h1>
+        <p>Premium Unique Pieces</p>
+    </header>
+
+    <div class="container">
+        <div class="products" id="product-list">
+            <div id="loading">Loading inventory from database...</div>
+        </div>
+
+        <div class="cart">
+            <h2>Your Cart</h2>
+            <ul id="cart-items" style="list-style-type: none; padding: 0;"></ul>
+            <h3>Total: $<span id="cart-total">0</span></h3>
+            <button onclick="openCheckout()">Confirm & Buy</button>
+        </div>
+    </div>
+
+    <div id="checkoutModal" class="modal">
+        <div class="modal-content">
+            <h2>Delivery Details</h2>
+            <p>Please enter your info to complete the order:</p>
+            <input type="text" id="fullName" placeholder="Full Name" required>
+            <input type="tel" id="phoneNumber" placeholder="Phone Number" required>
+            <input type="text" id="location" placeholder="Full Location/Address" required>
+            <button onclick="submitOrder()">Place Order via WhatsApp</button>
+            <button style="background: #dc3545;" onclick="closeCheckout()">Cancel</button>
+        </div>
+    </div>
+
+    <script>
+        // Your Google Apps Script API URL
+        const API_URL = "https://script.google.com/macros/s/AKfycbxhGsEhf6u2DaqreEPNax-0yOPG3WB-vd6VMRavbtaA_ZDm5XgemE1kLkYs2sVi3dYCiQ/exec";
+        
+        let inventory = [];
+        let cart = [];
+        let total = 0;
+
+        // Fetch data from your Google Sheet
+        async function loadProducts() {
+            try {
+                const response = await fetch(API_URL);
+                inventory = await response.json();
+                displayProducts();
+            } catch (error) {
+                document.getElementById('loading').innerText = "Error loading shop. Please try again later.";
+                console.error("Failed to fetch inventory:", error);
+            }
+        }
+
+        // Display the products on the page
+        function displayProducts() {
+            const productList = document.getElementById('product-list');
+            productList.innerHTML = ''; // Clear loading text
+
+            if (inventory.length === 0) {
+                productList.innerHTML = "<p>All items are currently sold out. Check back soon!</p>";
+                return;
+            }
+
+            inventory.forEach(item => {
+                // Ensure Google Drive links are formatted for image tags
+                let imgUrl = item.image;
+                if (imgUrl.includes("drive.google.com/file/d/")) {
+                    const fileId = imgUrl.split("/d/")[1].split("/")[0];
+                    imgUrl = `https://drive.google.com/uc?id=${fileId}`;
+                }
+
+                productList.innerHTML += `
+                    <div class="product-card">
+                        <img src="${imgUrl}" alt="${item.name}" onerror="this.src='https://via.placeholder.com/200x200?text=No+Image'">
+                        <h3>${item.name}</h3>
+                        <p>$${item.price}</p>
+                        <p style="font-size: 0.8em; color: #666;">Stock: ${item.quantity}</p>
+                        <button onclick="addToCart(${item.id})">Add to Cart</button>
+                    </div>
+                `;
+            });
+        }
+
+        // Handle Cart
+        function addToCart(id) {
+            const item = inventory.find(i => i.id === id);
+            cart.push(item);
+            total += Number(item.price);
+            updateCartUI();
+        }
+
+        function updateCartUI() {
+            const cartItems = document.getElementById('cart-items');
+            cartItems.innerHTML = '';
+            cart.forEach((item, index) => {
+                cartItems.innerHTML += `<li style="margin-bottom: 5px;">${item.name} - $${item.price} <button style="width:auto; padding:2px 5px; background: #dc3545; font-size:10px; margin-left:10px;" onclick="removeFromCart(${index})">X</button></li>`;
+            });
+            document.getElementById('cart-total').innerText = total;
+        }
+
+        function removeFromCart(index) {
+            total -= Number(cart[index].price);
+            cart.splice(index, 1);
+            updateCartUI();
+        }
+
+        // Handle Checkout
+        function openCheckout() {
+            if (cart.length === 0) {
+                alert("Your cart is empty!");
+                return;
+            }
+            document.getElementById('checkoutModal').style.display = 'block';
+        }
+
+        function closeCheckout() {
+            document.getElementById('checkoutModal').style.display = 'none';
+        }
+
+        function submitOrder() {
+            const name = document.getElementById('fullName').value;
+            const phone = document.getElementById('phoneNumber').value;
+            const loc = document.getElementById('location').value;
+
+            if (!name || !phone || !loc) {
+                alert("Please fill out all fields!");
+                return;
+            }
+
+            // --- IMPORTANT: CHANGE THIS NUMBER TO YOUR WHATSAPP NUMBER ---
+            const myWhatsAppNumber = "96170423477"
+            
+            // Build the WhatsApp message
+            let orderDetails = `*New Order Alert!*\n\n*Customer:* ${name}\n*Phone:* ${phone}\n*Location:* ${loc}\n\n*Items Ordered:*\n`;
+            cart.forEach(item => {
+                orderDetails += `- ${item.name} ($${item.price})\n`;
+            });
+            orderDetails += `\n*Total Due: $${total}*`;
+
+            const encodedMessage = encodeURIComponent(orderDetails);
+            const whatsappUrl = `https://wa.me/${myWhatsAppNumber}?text=${encodedMessage}`;
+
+            // Redirect customer to WhatsApp
+            window.open(whatsappUrl, '_blank');
+
+            // Reset Shop
+            cart = [];
+            total = 0;
+            updateCartUI();
+            closeCheckout();
+            document.getElementById('fullName').value = '';
+            document.getElementById('phoneNumber').value = '';
+            document.getElementById('location').value = '';
+        }
+
+        // Start the app
+        loadProducts();
+    </script>
+</body>
+</html>
